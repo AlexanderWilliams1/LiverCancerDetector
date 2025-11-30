@@ -7,6 +7,31 @@ import re
 import os
 import optuna
 
+
+# Locate your original input file 
+IN_FILE = "hccDataCompleteBalancedForTraining.csv"  # change to match your filename
+OUT_FILE = "corrected_" + os.path.basename(IN_FILE)
+
+# Regex: matches cells like '1,1' or '-3,25' but not '1','1' 
+num_comma_re = re.compile(r'^\s*-?\d+,\d+\s*$')
+
+print(f"[INFO] Reading {IN_FILE}...")
+df = pd.read_csv(IN_FILE, dtype=str, keep_default_na=False, encoding='utf-8')
+
+print("[INFO] Fixing decimal commas safely...")
+
+def fix_decimal_comma(value: str):
+    if isinstance(value, str) and num_comma_re.match(value):
+        return value.strip().replace(',', '.')
+    return value
+
+df = df.applymap(fix_decimal_comma)
+
+df.to_csv(OUT_FILE, index=False, encoding='utf-8')
+print(f"[INFO] Corrected file saved as {OUT_FILE}")
+
+
+
 data=pd.read_csv("corrected_hccDataCompleteBalancedForTraining.csv") #This file is a edited file with no NAN value. 
 x=data.drop(columns=["Class"],axis=1)
 y=data["Class"]
@@ -21,6 +46,7 @@ categorical_features =[
     "Encephalopathy", "Ascites", "Nodule"
 ]
 
+#Trail based on optuna(Tuning)
 def objective(trial):
     params={
         
@@ -38,6 +64,7 @@ def objective(trial):
     }
 
 
+#train a model with best params
     model=cat.CatBoostClassifier(**params)
     model.fit(
         x_train,
@@ -52,7 +79,7 @@ def objective(trial):
     acc = accuracy_score(y_test, y_pred)
     return acc
 
-
+#start the trials
 study=optuna.create_study(direction="maximize")
 study.optimize(objective,n_trials=1000)
 
@@ -60,6 +87,8 @@ study.optimize(objective,n_trials=1000)
 print("Best_params:", study.best_params)
 print("Best_value:", study.best_value)
 
+
+#train a model with final result,which are best params
 best_model = cat.CatBoostClassifier(
     **study.best_params,
     cat_features=cat_features,
@@ -75,6 +104,6 @@ best_model.fit(
     early_stopping_rounds=50
 )
 
-# 7. Final Metrics
+#Final Metrics
 y_pred = best_model.predict(x_test)
 print(f"Final_Metrics: {accuracy_score(y_test, y_pred):.4f}")
