@@ -1,0 +1,80 @@
+import catboost as cat
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+from sklearn.metrics import accuracy_score
+import pandas as pd
+import re
+import os
+import optuna
+
+data=pd.read_csv("corrected_hccDataCompleteBalancedForTraining.csv") #This file is a edited file with no NAN value. 
+x=data.drop(columns=["Class"],axis=1)
+y=data["Class"]
+
+x_train,x_test,y_train,y_test=train_test_split(x,y,test_size=0.2,random_state=42)
+
+categorical_features =[
+    "Gender", "Symptoms", "Alcohol", "HBsAg", "HBeAg", "HBcAb", 
+    "HCVAb", "Cirrhosis", "Endemic", "Smoking", "Diabetes", 
+    "Obesity", "Hemochro", "AHT", "CRI", "HIV", "NASH", "Varices", 
+    "Spleno", "PHT", "PVT", "Metastasis", "Hallmark", "PS", 
+    "Encephalopathy", "Ascites", "Nodule"
+]
+
+def objective(trial):
+    params={
+        
+        "l2_leaf_reg":trial.suggest_int("l2_leaf_reg",2,10),
+        "iterations":trial.suggest_int("iterations",200,10000),
+        "verbose":0,
+        "depth":trial.suggest_int("depth",2,10),
+        "cat_features":categorical_features,
+        "early_stopping_rounds":40,
+        "learning_rate":trial.suggest_float("learning_rate",0.01,0.1),
+        "random_seed":trial.suggest_int("randon_seed",42,42000),
+        "bagging_temperature":trial.suggest_int("bagging_temperature",1,10000),
+        "eval_metric":"Accuracy",
+        "loss_function":"Logloss"
+    }
+
+
+    model=cat.CatBoostClassifier(**params)
+    model.fit(
+        x_train,
+        y_train,
+        eval_set=(x_test,y_test),
+        cat_features=categorical_features,
+        early_stopping_rounds=params["early_stopping_rounds"],
+        verbose=0
+    )
+
+    y_pred=model.predict(x_test)
+    acc = accuracy_score(y_test, y_pred)
+    return acc
+
+
+study=optuna.create_study(direction="maximize")
+study.optimize(objective,n_trials=1000)
+
+
+print("Best_params:", study.best_params)
+print("Best_value:", study.best_value)
+
+best_model = cat.CatBoostClassifier(
+    **study.best_params,
+    cat_features=cat_features,
+    eval_metric="Accuracy",
+    loss_function="Logloss",
+    verbose=40
+)
+best_model.fit(
+    x_train,
+    y_train,
+    eval_set=(x_test, y_test),
+    cat_features=cat_features,
+    early_stopping_rounds=50
+)
+
+# 7. Final Metrics
+y_pred = best_model.predict(x_test)
+print(f"Final_Metrics: {accuracy_score(y_test, y_pred):.4f}")
